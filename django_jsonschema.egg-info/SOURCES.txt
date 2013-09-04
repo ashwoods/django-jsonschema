@@ -1,0 +1,11 @@
+django_jsonschema.egg-info/PKG-INFO
+django_jsonschema.egg-info/SOURCES.txt
+django_jsonschema.egg-info/dependency_links.txt
+django_jsonschema.egg-info/not-zip-safe
+django_jsonschema.egg-info/top_level.txt
+djangojsonschema/__init__.py
+djangojsonschema/forms.py
+djangojsonschema/jsonschema.py
+djangojsonschema/tests/__init__.py
+djangojsonschema/tests/test_form_to_jsonschema.py
+djangojsonschema/tests/test_jsonschemafield.py
