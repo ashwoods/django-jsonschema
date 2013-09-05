@@ -12,10 +12,6 @@ def pretty_name(name):
 
 class DjangoFormToJSONSchema(object):
 
-    input_type_map = {
-        'text': 'string',
-    }
-
     def get_form_fields(self, form):
         """ base_fields when given a class,
             fields for when given an instance
@@ -36,73 +32,146 @@ class DjangoFormToJSONSchema(object):
                 json_schema['properties'][name]['default'] = unicode(value)
         return json_schema
 
-    def convert_form(self, form, json_schema=None, instance=None):
-        if json_schema is None:
+    def get_base_json_schema(self, form):
+        """Contructs a base json_schema from a form"""
 
-            json_schema = {
-                'title': pretty_name(form.__class__.__name__),
-                'description': form.__doc__ or '',
-                'type': 'object',
-                'properties': {},
-            }
+        base_json_schema = {
+            'title': pretty_name(form.__class__.__name__),
+            'description': form.__doc__ or '',
+            'type': 'object',
+            'properties': {},
+        }
+        return base_json_schema
 
+    def convert_form(self, form, instance=None):
+        """Converts a django form to a json schema"""
+
+        json_schema = self.get_base_json_schema(form)
         form_fields = self.get_form_fields(form)
 
         for name, field in form_fields:
-            field_data = self.convert_formfield(name, field, json_schema)
-            json_schema['properties'][name] = field_data
+            properties = self.get_base_properties(name, field)
+            field_properties = self.get_field_properties(field)
+            properties.update(field_properties)
+            json_schema['properties'][name] = properties
 
         if instance:
-            """ Populate the default values if an instance is given """
             self.populate_schema_defaults_from_instance(
                 json_schema, instance)
 
         return json_schema
 
-    def convert_formfield(self, name, field, json_schema):
-        #TODO detect bound field
-        widget = field.widget
-        target_def = {
-            'title': pretty_name(name),
-            'description': field.help_text,
-            'readonly': widget.attrs.get('readonly', False),
-            'required': field.required,
-            'default': field.initial or ''}
+    def get_base_properties(self, name, field, base_properties={}):
+        """Adds base properties to the field"""
 
-        #TODO JSONSchemaField; include subschema and ref the type
+        title = pretty_name(name)
+        description = field.help_text
+        readonly = field.widget.attrs.get('readonly', False)
+        required = field.required
+        default = field.initial or ''
+
+        base_properties.update(
+            title=title,
+            description=description,
+            readonly=readonly,
+            required=required,
+            default=default)
+
+        if 'maxlength' in field.widget.attrs:
+            maxLength = field.widget.attrs.get('maxlength')
+            base_properties.update(maxLength=maxLength)
+
+        if 'minlength' in field.widget.attrs:
+            minLength = field.widget.attrs.get('minlength')
+            base_properties.update(minLength=minLength)
+
+        if getattr(field, 'max_value', False):
+            base_properties.update(maximum=field.max_value)
+
+        if getattr(field, 'min_value', False):
+            base_properties.update(minimum=field.min_value)
+
+        if getattr(field, 'choices', False):
+            if field.choices:
+                choices = []
+                for choice in field.choices:
+                    if choice[0] is not '':
+                        choices.append(choice[0])
+                base_properties.update(enum=choices)
+
+        return base_properties
+
+    def get_field_properties(self, field, field_properties={}):
+        """Converts a django form field to a set of properties"""
+
         if isinstance(field, fields.URLField):
-            target_def['type'] = 'string'
-            target_def['format'] = 'url'
+            field_properties.update(type='string', format='url')
+
         elif isinstance(field, fields.FileField):
-            target_def['type'] = 'string'
-            target_def['format'] = 'uri'
+            field_properties.update(type='string', format='uri')
+
         elif isinstance(field, fields.DateField):
-            target_def['type'] = 'string'
-            target_def['format'] = 'date'
+            # TODO: Use field.widget.format to pattern property (regex)
+            field_properties.update(type='string', format='date')
+
         elif isinstance(field, fields.DateTimeField):
-            target_def['type'] = 'string'
-            target_def['format'] = 'datetime'
+            # TODO: Use field.widget.format to pattern property (regex)
+            field_properties.update(type='string', format='datetime')
+
         elif isinstance(field, (fields.DecimalField, fields.FloatField)):
-            target_def['type'] = 'number'
+            """
+                TODO: Use field.widget.format to pattern property (regex)
+                TODO: exclusiveMinimum.
+                    Property value can not equal the number defined by the
+                    minimum schema property.
+                    boolean false
+                TODO: exclusiveMaximum.
+                    Property value can not equal the number defined by the
+                    maximum schema property.
+                    boolean false
+            """
+            field_properties.update(type='number')
+
         elif isinstance(field, fields.IntegerField):
-            target_def['type'] = 'integer'
+            """
+                TODO: Use field.widget.format to pattern property (regex)
+                TODO: exclusiveMinimum.
+                    Property value can not equal the number defined by the
+                    minimum schema property.
+                    boolean false
+                TODO: exclusiveMaximum.
+                    Property value can not equal the number defined by the
+                    maximum schema property.
+                    boolean false
+                TODO: divisibleBy.
+                    Property value must be divisible by this number.
+                    integer
+            """
+            field_properties.update(type='integer')
+
         elif isinstance(field, fields.EmailField):
-            target_def['type'] = 'string'
-            target_def['format'] = 'email'
+            # TODO: Use field.widget.format to pattern property (regex)
+            field_properties.update(type='string', format='email')
+
         elif isinstance(field, fields.NullBooleanField):
-            target_def['type'] = 'boolean'
-        elif isinstance(widget, widgets.CheckboxInput):
-            target_def['type'] = 'boolean'
-        elif isinstance(widget, widgets.Select):
-            target_def['type'] = 'string'
-            if hasattr(widget, 'allow_multiple_selected'):
-                if widget.allow_multiple_selected:
-                    target_def['type'] = 'array'
-            target_def['enum'] = [choice[0] for choice in field.choices]
-        elif isinstance(widget, widgets.Input):
-            translated_type = self.input_type_map.get(
-                widget.input_type, 'string')
-            target_def['type'] = translated_type
+            field_properties.update(type='boolean')
+
+        elif isinstance(field.widget, widgets.CheckboxInput):
+            field_properties.update(type='boolean')
+
+        elif isinstance(field.widget, widgets.Select):
+            field_properties.update(type='string')
+
+            if hasattr(field.widget, 'allow_multiple_selected'):
+                if field.widget.allow_multiple_selected:
+                    field_properties.update(type='array')
+
+        elif isinstance(field.widget, widgets.Input):
+            # TODO: Use field.widget.format to pattern property (regex)
+            field_properties.update(type='string')
+
         else:
-            target_def['type'] = 'string'
-        return target_def
+            # All other cases
+            field_properties.update(type='string')
+
+        return field_properties
