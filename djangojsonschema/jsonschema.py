@@ -61,7 +61,7 @@ class DjangoFormToJSONSchema(object):
 
         return json_schema
 
-    def get_base_properties(self, name, field, base_properties={}):
+    def get_base_properties(self, name, field):
         """Adds base properties to the field"""
 
         title = pretty_name(name)
@@ -70,7 +70,7 @@ class DjangoFormToJSONSchema(object):
         required = field.required
         default = field.initial or ''
 
-        base_properties.update(
+        base_properties = dict(
             title=title,
             description=description,
             readonly=readonly,
@@ -101,9 +101,11 @@ class DjangoFormToJSONSchema(object):
 
         return base_properties
 
-    def get_field_properties(self, field, field_properties={}):
+    def get_field_properties(self, field):
         """Converts a django form field to a set of properties"""
 
+        field_properties = dict()
+        
         if isinstance(field, fields.URLField):
             field_properties.update(type='string', format='url')
 
