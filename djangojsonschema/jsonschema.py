@@ -23,15 +23,6 @@ class DjangoFormToJSONSchema(object):
             form_fields = form.fields.iteritems()
         return form_fields
 
-    def populate_schema_defaults_from_instance(self, json_schema, instance):
-        """ Populate the json_schema with default
-            values if an instance is given """
-        for name, properties in json_schema.get('properties').items():
-            if hasattr(instance, name):
-                value = getattr(instance, name)
-                json_schema['properties'][name]['default'] = unicode(value)
-        return json_schema
-
     def get_base_json_schema(self, form):
         """Contructs a base json_schema from a form"""
 
@@ -43,39 +34,39 @@ class DjangoFormToJSONSchema(object):
         }
         return base_json_schema
 
-    def convert_form(self, form, instance=None):
+    def convert_form(self, form, instance=None, exclude_fields=[]):
         """Converts a django form to a json schema"""
 
         json_schema = self.get_base_json_schema(form)
         form_fields = self.get_form_fields(form)
+        model = form._meta.model
 
         for name, field in form_fields:
-            properties = self.get_base_properties(name, field)
-            field_properties = self.get_field_properties(field)
-            properties.update(field_properties)
-            json_schema['properties'][name] = properties
-
-        if instance:
-            self.populate_schema_defaults_from_instance(
-                json_schema, instance)
-
+            if not name in exclude_fields:
+                properties = self.get_base_properties(name, field, model)
+                field_properties = self.get_field_properties(field)
+                properties.update(field_properties)
+                json_schema['properties'][name] = properties
         return json_schema
 
-    def get_base_properties(self, name, field):
+    def get_base_properties(self, name, field, model):
         """Adds base properties to the field"""
 
         title = pretty_name(name)
         description = field.help_text
         readonly = field.widget.attrs.get('readonly', False)
         required = field.required
-        default = field.initial or ''
+        bound_field = model._meta.get_field_by_name(name)[0]
 
         base_properties = dict(
             title=title,
             description=description,
             readonly=readonly,
-            required=required,
-            default=default)
+            required=required)
+
+        if bound_field.has_default():
+            default = bound_field.default()
+            base_properties.update(default=default)
 
         if 'maxlength' in field.widget.attrs:
             maxLength = field.widget.attrs.get('maxlength')
@@ -105,7 +96,7 @@ class DjangoFormToJSONSchema(object):
         """Converts a django form field to a set of properties"""
 
         field_properties = dict()
-        
+
         if isinstance(field, fields.URLField):
             field_properties.update(type='string', format='url')
 
