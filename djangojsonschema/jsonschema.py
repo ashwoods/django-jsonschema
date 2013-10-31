@@ -1,6 +1,7 @@
 import inspect
 
 from django.forms import widgets, fields
+from collections import OrderedDict
 
 
 def pretty_name(name):
@@ -30,7 +31,7 @@ class DjangoFormToJSONSchema(object):
             'title': pretty_name(form.__class__.__name__),
             'description': form.__doc__ or '',
             'type': 'object',
-            'properties': {},
+            'properties': OrderedDict(),
         }
         return base_json_schema
 
@@ -65,7 +66,10 @@ class DjangoFormToJSONSchema(object):
             required=required)
 
         if bound_field.has_default():
-            default = bound_field.default()
+            if callable(bound_field.default):
+                default = bound_field.default()
+            else:
+                default = bound_field.default
             base_properties.update(default=default)
 
         if 'maxlength' in field.widget.attrs:
